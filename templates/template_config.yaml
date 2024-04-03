@@ -1,0 +1,18 @@
+# if you have multiple APICs locations (ex. DC_A tied to one APIC. DC_B tied to another APIC) put them in the prim list
+# if you have backups to those location put them in the sec list
+APIC:
+    pri_dc:
+     - 'https://dc_prim1:443' : SITE_A
+     - 'https://dc_prim2:443' : SITE_B
+    sec_dc:
+     - 'https://dc_sec1:443' : SITE_A
+     - 'https://dc_sec2:443' : SITE_B
+    username: 'APIC_USERNAME'
+    password: 'APIC_PASSWORD'
+
+CSW:
+    API_ENDPOINT: "https://CSW_ADDRESS"
+    # since CSW may log the same device with different interfaces use this to filter out data that may be not needed such as your only looking for interfaces within this range
+    CSW_filter_IP: "192.168.0.0/16"
+    API Key: API_KEY
+    API Secret: API_SEC
