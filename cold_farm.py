@@ -50,7 +50,7 @@ class Farmer:
             "filter": {"type": "and", "filters": [{"type": "subnet", "field": "ip", "value": csw_info['CSW_filter_IP']}]}
         }
 
-        csw_client = RestClient(csw_info['API_ENDPOINT'], verify=False, api_key=csw_info['api_key'], api_secret=csw_info['api_secret'])
+        csw_client = RestClient(csw_info['API_ENDPOINT'], verify=False, api_key=csw_info['API Key'], api_secret=csw_info['API Secret'])
 
         # get inventory data
         raw_csw = csw_client.post('/inventory/search', json_body=dumps(inventory_query))
@@ -106,4 +106,4 @@ class Farmer:
 if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
     coldF.logger.info('Starting ColdFarmer')
-    coldF.aci_handler()
+    coldF.csw_handler()
