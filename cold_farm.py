@@ -41,6 +41,9 @@ class Farmer:
                         site_coll.append(site_name)
                         aci_dfs.append(aci_endpoints)
 
+        # combine and normalize
+        aci_dfs = pd.concat(aci_dfs, axis=0).drop_duplicates(subset=['iface_mac'])
+
     # TODO: what to do with dfs and site coll
 
     def csw_handler(self):
