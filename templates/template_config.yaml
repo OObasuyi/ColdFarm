@@ -11,8 +11,11 @@ APIC:
     password: 'APIC_PASSWORD'
 
 CSW:
-    API_ENDPOINT: "https://CSW_ADDRESS"
+    secure_workload: https://CSW_ADDRESS
     # since CSW may log the same device with different interfaces use this to filter out data that may be not needed such as your only looking for interfaces within this range
     CSW_filter_IP: "192.168.0.0/16"
-    API Key: API_KEY
-    API Secret: API_SEC
+    api_key: API_KEY
+    api_secret: API_SEC
+
+ISE:
+  node: http

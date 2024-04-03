@@ -4,6 +4,7 @@ import pandas as pd
 from time import sleep
 from utils import Rutils, log_collector
 from json import loads, dumps
+from socket import gethostbyaddr, herror
 
 
 class Farmer:
@@ -24,27 +25,23 @@ class Farmer:
 
         # since we have a list of DCs lets spool
         for pl in pri_list:
-            for url_data, site_name in pl.items():
-                aci_endpoints = self._aci_spooler(url=url_data, login=apic_info['username'], password=apic_info['password'])
-                # if APIC didnt timeout mark it and get the res
-                if aci_endpoints:
-                    site_coll.append(site_name)
-                    aci_dfs.append(aci_endpoints)
+            aci_endpoints, site_name = self._aci_engine(site_data=pl,apic_info=apic_info)
+            if site_name:
+                site_coll.append(site_name)
+                aci_dfs.append(aci_endpoints)
 
         # if a site was unreachable in the prim list then we need to search the sec list
         for sl in sec_list:
             if sl not in site_coll:
-                for url_data, site_name in sl.items():
-                    aci_endpoints = self._aci_spooler(url=url_data, login=apic_info['username'], password=apic_info['password'])
-                    # if APIC didnt timeout mark it and get the res
-                    if aci_endpoints:
-                        site_coll.append(site_name)
-                        aci_dfs.append(aci_endpoints)
+                aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
+                if site_name:
+                    site_coll.append(site_name)
+                    aci_dfs.append(aci_endpoints)
 
         # combine and normalize
         aci_dfs = pd.concat(aci_dfs, axis=0).drop_duplicates(subset=['iface_mac'])
-
-    # TODO: what to do with dfs and site coll
+        aci_dfs['dns_name'] = aci_dfs['iface_mac'].apply(lambda x: self._dns_socket_handle(x))
+        return aci_dfs
 
     def csw_handler(self):
         csw_info = self.config['CSW']
@@ -53,7 +50,7 @@ class Farmer:
             "filter": {"type": "and", "filters": [{"type": "subnet", "field": "ip", "value": csw_info['CSW_filter_IP']}]}
         }
 
-        csw_client = RestClient(csw_info['API_ENDPOINT'], verify=False, api_key=csw_info['API Key'], api_secret=csw_info['API Secret'])
+        csw_client = RestClient(csw_info['secure_workload'], verify=False, api_key=csw_info['api_key'], api_secret=csw_info['api_secret'])
 
         # get inventory data
         raw_csw = csw_client.post('/inventory/search', json_body=dumps(inventory_query))
@@ -71,6 +68,26 @@ class Farmer:
         csw_endpoints.drop_duplicates(subset='host_name', inplace=True)
         csw_endpoints.dropna(subset='host_name', inplace=True)
         return csw_endpoints
+    
+    def ise_handler(self):
+        pass
+
+    def _aci_engine(self,site_data,apic_info):
+        for url_data, site_name in site_data.items():
+            aci_endpoints = self._aci_spooler(url=url_data, login=apic_info['username'], password=apic_info['password'])
+            # if APIC didnt timeout mark it and get the res
+            if aci_endpoints:
+                return aci_endpoints, site_name
+            else:
+                self.logger.error(f'ACI: could not reach {site_name} @ {url_data}')
+                return None, None
+
+    def _dns_socket_handle(self,x):
+        try:
+             return gethostbyaddr(x)
+        except herror as error:
+            self.logger.debug(f'DNS issue for {x}: error code: {error}')
+            return None
 
     def _aci_spooler(self, url, login, password):
         session = aci_mod.Session(url=url, uid=login, pwd=password, subscription_enabled=False)
