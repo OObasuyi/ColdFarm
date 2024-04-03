@@ -5,6 +5,7 @@ from time import sleep
 from utils import Rutils, log_collector
 from json import loads, dumps
 from socket import gethostbyaddr, herror
+import requests
 
 
 class Farmer:
@@ -69,8 +70,15 @@ class Farmer:
         csw_endpoints.dropna(subset='host_name', inplace=True)
         return csw_endpoints
     
-    def ise_handler(self):
-        pass
+    def send_data_to_ise(self):
+        # pull info from csw and aci
+        aci_data = self.aci_handler()
+        csw_data = self.csw_handler()
+        ise_info = self.config['ISE']
+
+        # first need to check if the macs are in ISE already if they are then need to apply update to them
+        requests.get(url=ise_info['node'])
+
 
     def _aci_engine(self,site_data,apic_info):
         for url_data, site_name in site_data.items():
