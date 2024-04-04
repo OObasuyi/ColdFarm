@@ -19,7 +19,7 @@ CSW:
 
 ISE:
   # ISE ERS creds
-  node: http://ISE_ADDRESS
+  node: https://ISE_ADDRESS
   username: USERNAME
   password: PASSWORD
 
