@@ -4,7 +4,9 @@ import string
 from uuid import uuid4
 
 
-def input_generator(amount: int = 25, prefix: str = 'labnet-', need_id: bool = False):
+def input_generator(amount: int = 25, prefix: str = 'labnet-', need_id: bool = False,seed:int=None):
+    if seed:
+        random.seed(seed)
     operating_systems = ['WindowsServer2012', 'Ubuntu', 'SuperSaverServer']
     real_oui= ['E0:CB:1D','40:92:1A','4C:EC:0F','98:40:BB']
     data = []

@@ -8,6 +8,8 @@ from requests import Session
 from ColdClarity.utilities import log_collector
 from ColdClarity.ise_control import Clarity
 import re
+import xml.etree.ElementTree as et
+
 
 class Farmer(Clarity):
 
@@ -101,21 +103,24 @@ class Farmer(Clarity):
         self.ip = re.sub(r'^https?://', '', ise_info["node"]) # sanitize the protocol name from the configs so we dont have double http
         self.ise_web_login_action()
         self.init_ise_session()
+        # todo: now pull mac data from ISE
+        ise_data = self.get_all_endpoint_data()
+        return ise_data
 
 
     def send_data_to_ise(self):
-        # pull info from csw and aci
-        # aci_data = self.pull_aci_data()
-        # csw_data = self.pull_csw_data()
         ise_info = self.config['ISE']
+        get_eps = f'{ise_info["node"]}/ers/config/endpoint'
         ise_session = Session()
         ise_session.verify = False
-        ise_session.headers = {"Accept": "application/json"}
+        ise_session.headers = {"Accept": "application/json","Content-Type": "application/xml"}
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
+        # pull info from csw and aci and endpoint from ise
+        # aci_data = self.pull_aci_data()
+        # csw_data = self.pull_csw_data()
+
         # first need to check if the macs are in ISE already if they are then need to apply update to them
-        # todo: this op is going to take a while stupid ISE.. do we need to use it everytime its ran?????
-        get_eps = f'{ise_info["node"]}/ers/config/endpoint'
         page_counter = 1
         page_list = []
         while True:
@@ -134,20 +139,69 @@ class Farmer(Clarity):
                 # if we have no more then break
                 if '"rel" : "next"' in req.text:
                     page_counter += 1
+                    sleep(.5)
                 else:
                     break
 
-        ep_dat = pd.DataFrame(page_list)
-        # todo: need to make endpoint update flow
-        # create templates based on new endpoints
+        ise_data = pd.DataFrame(page_list)
         bulk_create = get_eps + '/bulk'
+
         ######### TEST!!!!!!!!!####
         from TEST.tempcheck import input_generator
-        test_data = input_generator()
-        new_endpoints = [self._ise_template_creator(test_data.loc[td].to_dict()) for td in test_data.index]
-        new_endpoints = dumps(new_endpoints)
-        ret = ise_session.post(bulk_create, data=new_endpoints)
+        combined_data = input_generator(seed=399)
+        ######### TEST!!!!!!!!!####
+
+        # check to see if data from DC is already in ISE if so remove them for and mark for updating
+        # todo: need to combine csw and aci
+        # todo: need to make endpoint update flow
+        combined_data['in_datastore'] = False
+        for i in combined_data.index:
+            com_data = combined_data.iloc[i]
+            if com_data['mac'] in ise_data['mac']:
+                combined_data.loc[i, 'in_datastore'] = True
+
+
+        # create templates based on new endpoints
+        root, resources_list = self.ise_root_template()
+        new_endpoints = self._ise_endpoint_template(root, resources_list,combined_data)
+        ret = ise_session.put(bulk_create, data=new_endpoints)
+
+
+        if ret.status_code != 202:
+            self.logger.critical(f'ISE: could not create bulk endpoint received code {ret.status_code}')
+        else:
+            # get location of bulk to see the status of op
+            status_location = dict(ret.headers)['Location']
+            while True:
+                status_ret = ise_session.get(status_location)
+                if status_ret.status_code == 200:
+                    stat_info = loads(status_ret.content)['BulkStatus']
+                    if stat_info['executionStatus'] == 'IN_PROGRESS':
+                        self.logger.info(f'ISE: awaiting endpoint progress report on job {stat_info["bulkId"]}')
+                        sleep(3)
+                    elif stat_info['executionStatus'] == 'COMPLETED':
+                        if stat_info['successCount'] == stat_info['resourcesCount']:
+                            self.logger.info(f"ISE: endpoint bulk job {stat_info['bulkId']} successfully created")
+                            self.logger.info(f"ISE: endpoint bulk job  COMPLETED  {stat_info['successCount']} OF {stat_info['resourcesCount']}")
+
+                        else:
+                            self.logger.critical(f"ISE: endpoint bulk job {stat_info['bulkId']} FAILED  {stat_info['failCount']} OF {stat_info['resourcesCount']}")
+                        break
+                else:
+                    self.logger.critical(f'ISE: RECEIVED STATUS CODE {status_ret.status_code} when trying to create bulk endpoint {status_location}')
+                    quit()
+
         pass
+
+    @staticmethod
+    def ise_root_template():
+        root = et.Element('ns4:endpointBulkRequest', attrib={
+            'operationType': 'create',
+            'resourceMediaType': 'vnd.com.cisco.ise.identity.endpoint.1.0+xml',
+            'xmlns:ns4': 'identity.ers.ise.cisco.com'
+        })
+        resources_list = et.SubElement(root, 'ns4:resourcesList')
+        return root, resources_list
 
     def _aci_engine(self, site_data, apic_info):
         for url_data, site_name in site_data.items():
@@ -192,10 +246,12 @@ class Farmer(Clarity):
         aci_endpoints.rename(columns={0: 'iface_mac', 1: "ip", 2: "EPG"}, inplace=True)
         return aci_endpoints
 
+
     @staticmethod
     def _ise_template_creator(record_data: dict, update_record: str = False):
         """
         :type update_record: if this is set to False the template will return without the ID field. if you want to update a field fill this var with the appropriate ID
+        MEANT FOR BULK OPs but can handle singles with bulk election
         """
         temp = {
             "ERSEndPoint": {
@@ -217,8 +273,34 @@ class Farmer(Clarity):
 
         if update_record:
             temp['ERSEndPoint']['id'] = update_record
-
         return temp
+
+    @staticmethod
+    def _ise_endpoint_template(root,resources_list,endpoints:pd.DataFrame):
+        for i in endpoints.index:
+            endpoint = endpoints.iloc[i]
+            endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['hostname']})
+
+            custom_attributes = et.SubElement(endpoint_elm, 'customAttributes')
+            nested_custom_attributes = et.SubElement(custom_attributes, 'customAttributes')
+            for key, value in {'DataCenter_OS': endpoint['os'], 'DataCenter_HostName': endpoint['hostname'], 'DataCenter_IP': endpoint['ip'], 'DataCenter_Enforcement': 'None'}.items():
+                entry = et.SubElement(nested_custom_attributes, 'entry')
+                entry_key = et.SubElement(entry, 'key')
+                entry_key.text = key
+                entry_value = et.SubElement(entry, 'value')
+                entry_value.text = value
+
+            mac_element = et.SubElement(endpoint_elm, 'mac')
+            mac_element.text = endpoint['mac']
+
+            static_group_assignment = et.SubElement(endpoint_elm, 'staticGroupAssignment')
+            static_group_assignment.text = 'false'
+
+            static_profile_assignment = et.SubElement(endpoint_elm, 'staticProfileAssignment')
+            static_profile_assignment.text = 'false'
+
+        xml_str = et.tostring(root, encoding='UTF-8', xml_declaration=True)
+        return xml_str
 
     def _dns_socket_handle(self, x):
         try:
@@ -232,5 +314,5 @@ if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
     coldF.logger.info('Starting ColdFarmer')
     # coldF.pull_csw_data()
-    # coldF.send_data_to_ise()
-    coldF.pull_ise_data()
+    coldF.send_data_to_ise()
+    # coldF.pull_ise_data()
