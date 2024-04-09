@@ -97,30 +97,9 @@ class Farmer(Clarity):
         csw_endpoints.dropna(subset='host_name', inplace=True)
         return csw_endpoints
 
-    def pull_ise_data(self):
-        ise_info = self.config['ISE']
-        # lets call CC
-        self.ip = re.sub(r'^https?://', '', ise_info["node"]) # sanitize the protocol name from the configs so we dont have double http
-        self.ise_web_login_action()
-        self.init_ise_session()
-        # todo: now pull mac data from ISE
-        ise_data = self.get_all_endpoint_data()
-        return ise_data
-
-
-    def send_data_to_ise(self):
+    def pull_ise_data(self,ise_session):
         ise_info = self.config['ISE']
         get_eps = f'{ise_info["node"]}/ers/config/endpoint'
-        ise_session = Session()
-        ise_session.verify = False
-        ise_session.headers = {"Accept": "application/json","Content-Type": "application/xml"}
-        ise_session.auth = (ise_info['username'], ise_info['password'])
-
-        # pull info from csw and aci and endpoint from ise
-        # aci_data = self.pull_aci_data()
-        # csw_data = self.pull_csw_data()
-
-        # first need to check if the macs are in ISE already if they are then need to apply update to them
         page_counter = 1
         page_list = []
         while True:
@@ -142,9 +121,23 @@ class Farmer(Clarity):
                     sleep(.5)
                 else:
                     break
-
         ise_data = pd.DataFrame(page_list)
-        bulk_create = get_eps + '/bulk'
+
+        return ise_data
+
+
+    def send_data_to_ise(self):
+        ise_info = self.config['ISE']
+        bulk_create = f'{ise_info["node"]}/ers/config/endpoint/bulk'
+        ise_session = Session()
+        ise_session.verify = False
+        ise_session.headers = {"Accept": "application/json","Content-Type": "application/xml"}
+        ise_session.auth = (ise_info['username'], ise_info['password'])
+
+        # pull info from csw and aci and endpoint from ise
+        # aci_data = self.pull_aci_data()
+        # csw_data = self.pull_csw_data()
+        ise_data = self.pull_ise_data(ise_session)
 
         ######### TEST!!!!!!!!!####
         from TEST.tempcheck import input_generator
@@ -154,18 +147,17 @@ class Farmer(Clarity):
         # check to see if data from DC is already in ISE if so remove them for and mark for updating
         # todo: need to combine csw and aci
         # todo: need to make endpoint update flow
-        combined_data['in_datastore'] = False
+        combined_data['datastore_location'] = None
         for i in combined_data.index:
             com_data = combined_data.iloc[i]
-            if com_data['mac'] in ise_data['mac']:
-                combined_data.loc[i, 'in_datastore'] = True
-
+            if com_data['mac'].upper() in ise_data['name'].tolist():
+                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['mac'].upper()].iloc[0]
+        combined_new_endpoints = combined_data[combined_data['datastore_location'].isnull()]
 
         # create templates based on new endpoints
         root, resources_list = self.ise_root_template()
-        new_endpoints = self._ise_endpoint_template(root, resources_list,combined_data)
+        new_endpoints = self._ise_endpoint_template(root, resources_list,combined_new_endpoints)
         ret = ise_session.put(bulk_create, data=new_endpoints)
-
 
         if ret.status_code != 202:
             self.logger.critical(f'ISE: could not create bulk endpoint received code {ret.status_code}')
