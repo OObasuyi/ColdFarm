@@ -2,23 +2,47 @@ import acitoolkit.acitoolkit as aci_mod
 from tetpyclient import RestClient
 import pandas as pd
 from time import sleep
-from utils import Rutils, log_collector
 from json import loads, dumps
-from socket import gethostbyaddr, herror
+from socket import gethostbyaddr
 from requests import Session
+from ColdClarity.utilities import log_collector
+from ColdClarity.ise_control import Clarity
+import re
 
-
-class Farmer:
-    UTILS = Rutils()
+class Farmer(Clarity):
 
     def __init__(self, config: str = "config.yaml", verify_ssl=False):
-        self.logger = log_collector()
+        # super().__init__(config)
+        self.logger = log_collector(file_name='wastewater.log',func_name='ColdFarm')
         # move config file to new folder
         config = self.UTILS.create_file_path('configs', config)
         self.config = self.UTILS.get_yaml_config(config, self)
         self.ssl_verify = verify_ssl
 
-    def aci_handler(self):
+    def ise_web_login_action(self):
+        ise_info = self.config['ISE']
+        # ISE username and password
+        if ise_info['authentication']['text_based']['use']:
+            self.login_type = 'text'
+            ise_username = ise_info['authentication']['text_based']['username']
+            ise_password = ise_info['authentication']['text_based']['password']
+            # encode cred str to pass as a post msg to ISE
+            self.user = self.UTILS.encode_data(ise_username, base64=False)
+            self.password = self.UTILS.encode_data(ise_password, base64=False)
+            self.auth_source = ise_info['authentication']['text_based']['auth_source']
+        # cert based
+        elif ise_info['authentication']['cert_based']['use']:
+            self.login_type = 'cert'
+            cert_location = ise_info['authentication']['cert_based']['cert_pfx_location']
+            # move cert to new folder
+            self.cert_location = self.UTILS.create_file_path('certificate_information', cert_location)
+            self.cert_passwd = ise_info['authentication']['cert_based']['cert_password']
+        ise_session = Session()
+        ise_session.verify = self.ssl_verify
+        self.get_session(ise_session)
+        return ise_session
+
+    def pull_aci_data(self):
         site_coll = []
         aci_dfs = []
         apic_info = self.config['APIC']
@@ -45,7 +69,7 @@ class Farmer:
         aci_dfs['dns_name'] = aci_dfs['iface_mac'].apply(lambda x: self._dns_socket_handle(x))
         return aci_dfs
 
-    def csw_handler(self):
+    def pull_csw_data(self):
         csw_info = self.config['CSW']
         inventory_query = {
             "dimensions": ["host_name", "iface_mac", "ip", "os"],
@@ -71,10 +95,18 @@ class Farmer:
         csw_endpoints.dropna(subset='host_name', inplace=True)
         return csw_endpoints
 
+    def pull_ise_data(self):
+        ise_info = self.config['ISE']
+        # lets call CC
+        self.ip = re.sub(r'^https?://', '', ise_info["node"]) # sanitize the protocol name from the configs so we dont have double http
+        self.ise_web_login_action()
+        self.init_ise_session()
+
+
     def send_data_to_ise(self):
         # pull info from csw and aci
-        # aci_data = self.aci_handler()
-        # csw_data = self.csw_handler()
+        # aci_data = self.pull_aci_data()
+        # csw_data = self.pull_csw_data()
         ise_info = self.config['ISE']
         ise_session = Session()
         ise_session.verify = False
@@ -105,7 +137,6 @@ class Farmer:
                 else:
                     break
 
-
         ep_dat = pd.DataFrame(page_list)
         # todo: need to make endpoint update flow
         # create templates based on new endpoints
@@ -115,11 +146,8 @@ class Farmer:
         test_data = input_generator()
         new_endpoints = [self._ise_template_creator(test_data.loc[td].to_dict()) for td in test_data.index]
         new_endpoints = dumps(new_endpoints)
-        ret = ise_session.post(bulk_create,data = new_endpoints)
+        ret = ise_session.post(bulk_create, data=new_endpoints)
         pass
-
-
-
 
     def _aci_engine(self, site_data, apic_info):
         for url_data, site_name in site_data.items():
@@ -203,5 +231,6 @@ class Farmer:
 if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
     coldF.logger.info('Starting ColdFarmer')
-    # coldF.csw_handler()
-    coldF.send_data_to_ise()
+    # coldF.pull_csw_data()
+    # coldF.send_data_to_ise()
+    coldF.pull_ise_data()

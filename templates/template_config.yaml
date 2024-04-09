@@ -18,10 +18,21 @@ CSW:
     api_secret: API_SEC
 
 ISE:
-  # ISE ERS creds
+  # Clarity ERS and web login creds
   node: https://ISE_ADDRESS
   username: USERNAME
   password: PASSWORD
+  # for web login NOT ERS!
+  authentication:
+    text_based:
+      use: False
+      auth_source: Internal
+      username: False
+      password: False
+    cert_based:
+      use: True
+      cert_pfx_location: ise_client_cert.pfx
+      cert_password: False
 
 
 
