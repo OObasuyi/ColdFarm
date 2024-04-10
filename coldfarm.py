@@ -209,6 +209,9 @@ class Farmer(Clarity):
                 self.logger.error(f'ACI: could not reach {site_name} @ {url_data}')
                 return None, None
 
+    def _combine_aci_cws_df(aci_df,csw_df):
+        combined_df = aci_dfs = pd.concat([aci_df,csw_df], axis=0).drop_duplicates(subset=['iface_mac']).fillna('none')
+        
     def _aci_spooler(self, url, login, password):
         session = aci_mod.Session(url=url, uid=login, pwd=password, subscription_enabled=False, verify_ssl=self.ssl_verify)
 
