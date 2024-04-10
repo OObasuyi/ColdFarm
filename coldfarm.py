@@ -297,7 +297,7 @@ class Farmer(Clarity):
 
     def _dns_socket_handle(self, x):
         try:
-            return gethostbyaddr(x)[0].split(".")
+            return gethostbyaddr(x)[0].split(".")[0]
         except Exception as error:
             self.logger.debug(f'DNS issue for {x}: error code: {error}')
             return None
