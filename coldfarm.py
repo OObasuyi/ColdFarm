@@ -71,6 +71,7 @@ class Farmer(Clarity):
         aci_dfs = pd.concat(aci_dfs, axis=0).drop_duplicates(subset=['iface_mac'])
         aci_dfs['dns_name'] = aci_dfs['ip'].apply(lambda x: self._dns_socket_handle(x))
         aci_dfs['iface_mac'] = aci_dfs['iface_mac'].apply(lambda x: x.lower())
+        aci_dfs['host_name'] = aci_dfs['host_name'].apply(lambda x: x.lower())
         return aci_dfs
 
     def pull_csw_data(self):
