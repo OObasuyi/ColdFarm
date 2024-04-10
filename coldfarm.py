@@ -97,7 +97,8 @@ class Farmer(Clarity):
         # transform and normalize
         csw_endpoints = pd.DataFrame(csw_data["results"])
         csw_endpoints.drop_duplicates(subset='host_name', inplace=True)
-        csw_endpoints.dropna(subset='host_name', inplace=True)
+        csw_endpoints.dropna(subset='host_name', inplace=True
+        csw_endpoints['host_name'] = csw_endpoints['host_name'].apply(lambda x: x.lower()))
         return csw_endpoints
 
     def pull_ise_data(self,ise_session):
