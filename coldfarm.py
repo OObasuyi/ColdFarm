@@ -278,8 +278,9 @@ class Farmer(Clarity):
     def _ise_endpoint_template(root,resources_list,endpoints:pd.DataFrame):
         for i in endpoints.index:
             endpoint = endpoints.iloc[i]
+            endpoint['hostname'] = endpoint['hostname'] if endpoint['hostname'] != 'none' else endpoint['dns_name']
+            
             endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['hostname']})
-
             custom_attributes = et.SubElement(endpoint_elm, 'customAttributes')
             nested_custom_attributes = et.SubElement(custom_attributes, 'customAttributes')
             for key, value in {'DataCenter_OS': endpoint['os'], 'DataCenter_HostName': endpoint['hostname'], 'DataCenter_IP': endpoint['ip'], 'DataCenter_Enforcement': 'None'}.items():
