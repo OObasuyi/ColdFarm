@@ -49,7 +49,7 @@ class Farmer(Clarity):
         aci_dfs = []
         apic_info = self.config['APIC']
         pri_list = apic_info['pri_dc']
-        sec_list = apic_info['sec_dc']
+        sec_list = apic_info.get('sec_dc')
 
         # since we have a list of DCs lets spool
         for pl in pri_list:
@@ -59,12 +59,13 @@ class Farmer(Clarity):
                 aci_dfs.append(aci_endpoints)
 
         # if a site was unreachable in the prim list then we need to search the sec list
-        for sl in sec_list:
-            if sl not in site_coll:
-                aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
-                if site_name:
-                    site_coll.append(site_name)
-                    aci_dfs.append(aci_endpoints)
+        if sec_list:
+            for sl in sec_list:
+                if sl not in site_coll:
+                    aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
+                    if site_name:
+                        site_coll.append(site_name)
+                        aci_dfs.append(aci_endpoints)
 
         # combine and normalize
         aci_dfs = pd.concat(aci_dfs, axis=0).drop_duplicates(subset=['iface_mac'])
