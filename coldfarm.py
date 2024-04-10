@@ -199,7 +199,7 @@ class Farmer(Clarity):
         for url_data, site_name in site_data.items():
             aci_endpoints = self._aci_spooler(url=url_data, login=apic_info['username'], password=apic_info['password'])
             # if APIC didnt timeout mark it and get the res
-            if aci_endpoints:
+            if isinstance(aci_endpoints,pd.DataFrame):
                 return aci_endpoints, site_name
             else:
                 self.logger.error(f'ACI: could not reach {site_name} @ {url_data}')
