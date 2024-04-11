@@ -161,6 +161,7 @@ class Farmer(Clarity):
         # create templates based on new endpoints
         root, resources_list = self.ise_root_template()
         new_endpoints = self._ise_endpoint_template(root, resources_list,combined_new_endpoints)
+        self.logger.info(f'ISE: attempting to create {len(new_endpoints)} endpoint in ISE')
         ret = ise_session.put(bulk_create, data=new_endpoints)
 
         if ret.status_code != 202:
