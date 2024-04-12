@@ -59,19 +59,19 @@ class Farmer(Clarity):
                 aci_dfs.append(aci_endpoints)
 
         # if a site was unreachable in the prim list then we need to search the sec list
-        #if sec_list:
-        #    for sl in sec_list:
-        #       if sl not in site_coll:
-        #            aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
-        #            if site_name:
-        #                site_coll.append(site_name)
-        #                aci_dfs.append(aci_endpoints)
+        if sec_list:
+            for sl in sec_list:
+                if sl not in site_coll:
+                    aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
+                    if site_name:
+                        site_coll.append(site_name)
+                        aci_dfs.append(aci_endpoints)
 
         # combine and normalize
         aci_dfs = pd.concat(aci_dfs, axis=0).drop_duplicates(subset=['iface_mac'])
         aci_dfs['dns_name'] = aci_dfs['ip'].apply(lambda x: self._dns_socket_handle(x))
         aci_dfs['iface_mac'] = aci_dfs['iface_mac'].apply(lambda x: x.lower())
-        aci_dfs['host_name'] = aci_dfs['host_name'].apply(lambda x: x.lower())
+        aci_dfs['dns_name'] = aci_dfs['dns_name'].apply(lambda x: x.lower())
         return aci_dfs
 
     def pull_csw_data(self):
@@ -153,10 +153,10 @@ class Farmer(Clarity):
         combined_data = self._combine_aci_cws_df(aci_data,csw_data)
         # todo: need to make endpoint update flow
         combined_data['datastore_location'] = None
-        for i in combined_data.index:
-            com_data = combined_data.iloc[i]
-            if com_data['iface_mac'].upper() in ise_data['name'].tolist():
-                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['iface_mac'].upper()].iloc[0]
+#        for i in combined_data.index:
+#            com_data = combined_data.iloc[i]
+#            if com_data['iface_mac'].upper() in ise_data['name'].tolist():
+#                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['iface_mac'].upper()].iloc[0]
         combined_new_endpoints = combined_data[combined_data['datastore_location'].isnull()]
 
         # create templates based on new endpoints
@@ -211,10 +211,11 @@ class Farmer(Clarity):
                 self.logger.error(f'ACI: could not reach {site_name} @ {url_data}')
                 return None, None
 
+    @staticmethod
     def _combine_aci_cws_df(aci_df,csw_df):
         combined_df = aci_dfs = pd.concat([aci_df,csw_df], axis=0).drop_duplicates(subset=['iface_mac']).fillna('none')
         return combined_df
-        
+
     def _aci_spooler(self, url, login, password):
         session = aci_mod.Session(url=url, uid=login, pwd=password, subscription_enabled=False, verify_ssl=self.ssl_verify)
 
@@ -281,9 +282,9 @@ class Farmer(Clarity):
     def _ise_endpoint_template(root,resources_list,endpoints:pd.DataFrame):
         for i in endpoints.index:
             endpoint = endpoints.iloc[i]
-            endpoint['hostname'] = endpoint['hostname'] if endpoint['host_name'] != 'none' else endpoint['dns_name']
-            
-            endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['hostname']})
+            endpoint['host_name'] = endpoint['host_name'] if endpoint['host_name'] != 'none' else endpoint['dns_name']
+
+            endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['host_name']})
             custom_attributes = et.SubElement(endpoint_elm, 'customAttributes')
             nested_custom_attributes = et.SubElement(custom_attributes, 'customAttributes')
             for key, value in {'DataCenter_OS': endpoint['os'], 'DataCenter_HostName': endpoint['host_name'], 'DataCenter_IP': endpoint['ip'], 'DataCenter_Enforcement': 'None','DataCenter_EPG': endpoint['EPG']}.items():
@@ -310,7 +311,7 @@ class Farmer(Clarity):
             return gethostbyaddr(x)[0].split(".")[0]
         except Exception as error:
             self.logger.debug(f'DNS issue for {x}: error code: {error}')
-            return None
+            return "none"
 
 
 if __name__ == "__main__":
