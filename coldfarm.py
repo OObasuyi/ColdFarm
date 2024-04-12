@@ -139,8 +139,8 @@ class Farmer(Clarity):
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
         # pull info from csw and aci and endpoint from ise
-        # aci_data = self.pull_aci_data()
-        # csw_data = self.pull_csw_data()
+        aci_data = self.pull_aci_data()
+        csw_data = self.pull_csw_data()
         #ise_data = self.pull_ise_data(ise_session)
 
         ######### TEST!!!!!!!!!####
