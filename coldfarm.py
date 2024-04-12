@@ -141,15 +141,16 @@ class Farmer(Clarity):
         # pull info from csw and aci and endpoint from ise
         # aci_data = self.pull_aci_data()
         # csw_data = self.pull_csw_data()
-        ise_data = self.pull_ise_data(ise_session)
+        #ise_data = self.pull_ise_data(ise_session)
 
         ######### TEST!!!!!!!!!####
-        from TEST.tempcheck import input_generator
-        combined_data = input_generator(seed=399)
+        #from TEST.tempcheck import input_generator
+        #combined_data = input_generator(seed=399)
         ######### TEST!!!!!!!!!####
 
         # check to see if data from DC is already in ISE if so remove them for and mark for updating
-        # todo: need to combine csw and aci
+        # combine csw and aci
+        combined_data = self._combine_aci_cws_df(aci_data,csw_data)
         # todo: need to make endpoint update flow
         combined_data['datastore_location'] = None
         for i in combined_data.index:
