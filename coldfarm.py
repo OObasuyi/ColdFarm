@@ -155,8 +155,8 @@ class Farmer(Clarity):
         combined_data['datastore_location'] = None
         for i in combined_data.index:
             com_data = combined_data.iloc[i]
-            if com_data['mac'].upper() in ise_data['name'].tolist():
-                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['mac'].upper()].iloc[0]
+            if com_data['iface_mac'].upper() in ise_data['name'].tolist():
+                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['iface_mac'].upper()].iloc[0]
         combined_new_endpoints = combined_data[combined_data['datastore_location'].isnull()]
 
         # create templates based on new endpoints
@@ -294,7 +294,7 @@ class Farmer(Clarity):
                 entry_value.text = value
 
             mac_element = et.SubElement(endpoint_elm, 'mac')
-            mac_element.text = endpoint['mac']
+            mac_element.text = endpoint['iface_mac']
 
             static_group_assignment = et.SubElement(endpoint_elm, 'staticGroupAssignment')
             static_group_assignment.text = 'false'
