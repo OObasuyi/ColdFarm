@@ -64,7 +64,7 @@ class Rutils:
 
 
 def log_collector(log_all=False):
-    fName = Rutils().create_file_path('logging', 'wastewater.log')
+    fName = Rutils().create_file_path('Logging', 'wastewater.log')
 
     if not log_all:
         logger = logging.getLogger('ColdClarity')

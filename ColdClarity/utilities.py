@@ -73,7 +73,7 @@ class Rutils:
 
 
 def log_collector(log_all=False,file_name='log.txt',func_name='func_name'):
-    fName = Rutils().create_file_path('logging', file_name)
+    fName = Rutils().create_file_path('Logging', file_name)
 
     if not log_all:
         logger = logging.getLogger(func_name)

@@ -5,43 +5,18 @@ from time import sleep
 from json import loads, dumps
 from socket import gethostbyaddr
 from requests import Session
-from ColdClarity.utilities import log_collector
-from ColdClarity.ise_control import Clarity
-import xml.etree.ElementTree as et
+from ColdClarity.utilities import log_collector, Rutils
 
 
-class Farmer(Clarity):
+class Farmer:
+    UTILS = Rutils()
 
     def __init__(self, config: str = "config.yaml", verify_ssl=False):
-        # super().__init__(config)
-        self.logger = log_collector(file_name='wastewater.log',func_name='ColdFarm')
+        self.logger = log_collector(file_name='wastewater.log', func_name='ColdFarm')
         # move config file to new folder
         config = self.UTILS.create_file_path('configs', config)
         self.config = self.UTILS.get_yaml_config(config, self)
         self.ssl_verify = verify_ssl
-
-    def ise_web_login_action(self):
-        ise_info = self.config['ISE']
-        # ISE username and password
-        if ise_info['authentication']['text_based']['use']:
-            self.login_type = 'text'
-            ise_username = ise_info['authentication']['text_based']['username']
-            ise_password = ise_info['authentication']['text_based']['password']
-            # encode cred str to pass as a post msg to ISE
-            self.user = self.UTILS.encode_data(ise_username, base64=False)
-            self.password = self.UTILS.encode_data(ise_password, base64=False)
-            self.auth_source = ise_info['authentication']['text_based']['auth_source']
-        # cert based
-        elif ise_info['authentication']['cert_based']['use']:
-            self.login_type = 'cert'
-            cert_location = ise_info['authentication']['cert_based']['cert_pfx_location']
-            # move cert to new folder
-            self.cert_location = self.UTILS.create_file_path('certificate_information', cert_location)
-            self.cert_passwd = ise_info['authentication']['cert_based']['cert_password']
-        ise_session = Session()
-        ise_session.verify = self.ssl_verify
-        self.get_session(ise_session)
-        return ise_session
 
     def pull_aci_data(self):
         site_coll = []
@@ -100,7 +75,7 @@ class Farmer(Clarity):
         csw_endpoints['host_name'] = csw_endpoints['host_name'].apply(lambda x: x.lower())
         return csw_endpoints
 
-    def pull_ise_data(self,ise_session):
+    def pull_ise_data(self, ise_session):
         ise_info = self.config['ISE']
         get_eps = f'{ise_info["node"]}/ers/config/endpoint'
         page_counter = 1
@@ -122,18 +97,19 @@ class Farmer(Clarity):
                 if '"rel" : "next"' in req.text:
                     page_counter += 1
                     # sleep(.5)
-                # else:
+                    # else:
                     break
         ise_data = pd.DataFrame(page_list)
 
         return ise_data
 
-    def send_data_to_ise(self,test_data=False,**kwargs):
+    def send_data_to_ise(self, test_data=False, **kwargs):
+        self.logger.info('Starting CSW/ACI ingestion to ISE')
         ise_info = self.config['ISE']
-        bulk_create = f'{ise_info["node"]}/ers/config/endpoint/bulk'
+        bulk_create = f'{ise_info["node"]}/api/v1/endpoint/bulk'
         ise_session = Session()
         ise_session.verify = False
-        ise_session.headers = {"Accept": "application/json","Content-Type": "application/xml"}
+        ise_session.headers = {"Accept": "application/json", "Content-Type": "application/json"}
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
         # pull info from csw and aci and endpoint from ise
@@ -142,77 +118,42 @@ class Farmer(Clarity):
             csw_data = self.pull_csw_data()
             # combine csw and aci
             combined_data = self._combine_aci_cws_df(aci_data, csw_data)
-        # ise_data = self.pull_ise_data(ise_session)
 
         # Testing only
         if test_data:
-            from TEST.tempcheck import input_generator
-            combined_data = input_generator(seed=kwargs.get('seed'))
+            from Test.tempcheck import input_generator
+            combined_data = input_generator(seed=kwargs.get('test_seed'))
 
-        # check to see if data from DC is already in ISE if so remove them for and mark for updating
-        # todo: need to make endpoint update flow
-        combined_data['datastore_location'] = None
-#        for i in combined_data.index:
-#            com_data = combined_data.iloc[i]
-#            if com_data['iface_mac'].upper() in ise_data['name'].tolist():
-#                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['iface_mac'].upper()].iloc[0]
-        combined_new_endpoints = combined_data[combined_data['datastore_location'].isnull()]
-
-        # create templates based on new endpoints
-        root, resources_list = self.ise_root_template()
-        new_endpoints = self._ise_endpoint_template(root, resources_list,combined_new_endpoints)
+        # create Templates based on new endpoints
+        new_endpoints = self._ise_endpoint_template(combined_data)
         self.logger.info(f'ISE: attempting to create {len(new_endpoints)} endpoint in ISE')
-        ret = ise_session.put(bulk_create, data=new_endpoints)
 
-        if ret.status_code != 202:
-            self.logger.critical(f'ISE: could not create bulk endpoint received code {ret.status_code}')
-        else:
-            # get location of bulk to see the status of op
-            status_location = dict(ret.headers)['Location']
-            while True:
-                status_ret = ise_session.get(status_location)
-                if status_ret.status_code == 200:
-                    stat_info = loads(status_ret.content)['BulkStatus']
-                    if stat_info['executionStatus'] == 'IN_PROGRESS':
-                        self.logger.info(f'ISE: awaiting endpoint progress report on job {stat_info["bulkId"]}')
-                        sleep(3)
-                    elif stat_info['executionStatus'] == 'COMPLETED':
-                        if stat_info['successCount'] == stat_info['resourcesCount']:
-                            self.logger.info(f"ISE: endpoint bulk job {stat_info['bulkId']} successfully created")
-                            self.logger.info(f"ISE: endpoint bulk job  COMPLETED  {stat_info['successCount']} OF {stat_info['resourcesCount']}")
+        # this is gonna be two operations since its the most effienct way to make sure the endpoints are in with the v1 API and I cant get status updates on calls??
+        create_meth = ise_session.post(bulk_create, data=new_endpoints)
+        self.logger.info(f'ISE: received status code {create_meth.status_code} for trying to create {len(new_endpoints)} endpoints in ISE')
+        if create_meth.status_code == 200:
+            self.logger.debug(f'ISE: received back ID: {loads(create_meth.content)["id"]} from ISE')
+        sleep(5)
 
-                        else:
-                            self.logger.critical(f"ISE: endpoint bulk job {stat_info['bulkId']} FAILED  {stat_info['failCount']} OF {stat_info['resourcesCount']}")
-                        break
-                else:
-                    self.logger.critical(f'ISE: RECEIVED STATUS CODE {status_ret.status_code} when trying to create bulk endpoint {status_location}')
-                    quit()
-
+        update_meth = ise_session.put(bulk_create, data=new_endpoints)
+        self.logger.info(f'ISE: received status code {update_meth.status_code} for trying to update {len(new_endpoints)} endpoints in ISE')
+        if update_meth.status_code == 200:
+            self.logger.debug(f'ISE: received back ID: {loads(update_meth.content)["id"]} from ISE')
         pass
-
-    @staticmethod
-    def ise_root_template():
-        root = et.Element('ns4:endpointBulkRequest', attrib={
-            'operationType': 'create',
-            'resourceMediaType': 'vnd.com.cisco.ise.identity.endpoint.1.0+xml',
-            'xmlns:ns4': 'identity.ers.ise.cisco.com'
-        })
-        resources_list = et.SubElement(root, 'ns4:resourcesList')
-        return root, resources_list
 
     def _aci_engine(self, site_data, apic_info):
         for url_data, site_name in site_data.items():
             aci_endpoints = self._aci_spooler(url=url_data, login=apic_info['username'], password=apic_info['password'])
             # if APIC didnt timeout mark it and get the res
-            if isinstance(aci_endpoints,pd.DataFrame):
+            if isinstance(aci_endpoints, pd.DataFrame):
                 return aci_endpoints, site_name
             else:
                 self.logger.error(f'ACI: could not reach {site_name} @ {url_data}')
                 return None, None
 
     @staticmethod
-    def _combine_aci_cws_df(aci_df,csw_df):
-        combined_df = aci_dfs = pd.concat([aci_df,csw_df], axis=0).drop_duplicates(subset=['iface_mac']).fillna('none')
+    def _combine_aci_cws_df(aci_df, csw_df):
+        combined_df = aci_dfs = pd.concat([aci_df, csw_df], axis=0).drop_duplicates(subset=['iface_mac']).fillna('none')
         return combined_df
 
     def _aci_spooler(self, url, login, password):
@@ -249,32 +190,13 @@ class Farmer(Clarity):
         return aci_endpoints
 
     @staticmethod
-    def _ise_endpoint_template(root,resources_list,endpoints:pd.DataFrame):
-        for i in endpoints.index:
-            endpoint = endpoints.iloc[i]
-            endpoint['host_name'] = endpoint['host_name'] if endpoint['host_name'] != 'none' else endpoint['dns_name']
-
-            endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['host_name']})
-            custom_attributes = et.SubElement(endpoint_elm, 'customAttributes')
-            nested_custom_attributes = et.SubElement(custom_attributes, 'customAttributes')
-            for key, value in {'DataCenter_OS': endpoint['os'], 'DataCenter_HostName': endpoint['host_name'], 'DataCenter_IP': endpoint['ip'], 'DataCenter_Enforcement': 'None','DataCenter_EPG': endpoint['EPG']}.items():
-                entry = et.SubElement(nested_custom_attributes, 'entry')
-                entry_key = et.SubElement(entry, 'key')
-                entry_key.text = key
-                entry_value = et.SubElement(entry, 'value')
-                entry_value.text = value
-
-            mac_element = et.SubElement(endpoint_elm, 'mac')
-            mac_element.text = endpoint['iface_mac']
-
-            static_group_assignment = et.SubElement(endpoint_elm, 'staticGroupAssignment')
-            static_group_assignment.text = 'false'
-
-            static_profile_assignment = et.SubElement(endpoint_elm, 'staticProfileAssignment')
-            static_profile_assignment.text = 'false'
-
-        xml_str = et.tostring(root, encoding='UTF-8', xml_declaration=True)
-        return xml_str
+    def _ise_endpoint_template(endpoints_dat: pd.DataFrame):
+        endpoints_dat.rename(columns={'iface_mac': 'mac', "os": "assetDeviceType", "ip": "ipAddress"}, inplace=True)
+        endpoints_dat['customAttributes'] = endpoints_dat.apply(lambda row: {'DataCenter Enforcement': "None", 'DataCenter HostName': row['host_name'], 'DataCenter EPG': row['EPG']}, axis=1)
+        endpoints_dat['name'] = endpoints_dat['host_name'].str.lower()
+        endpoints_dat.drop(['host_name', 'EPG'], axis=1, inplace=True)
+        endpoints_dat_json = endpoints_dat.to_json(orient='records', force_ascii=False)
+        return endpoints_dat_json
 
     def _dns_socket_handle(self, x):
         try:
@@ -286,7 +208,7 @@ class Farmer(Clarity):
 
 if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
-    coldF.logger.info('Starting ColdFarmer')
+
     # coldF.pull_csw_data()
-    coldF.send_data_to_ise(test_data=True,seed=399)
+    coldF.send_data_to_ise(test_data=True)
     # coldF.pull_ise_data()
