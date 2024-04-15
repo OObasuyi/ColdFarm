@@ -7,7 +7,6 @@ from socket import gethostbyaddr
 from requests import Session
 from ColdClarity.utilities import log_collector
 from ColdClarity.ise_control import Clarity
-import re
 import xml.etree.ElementTree as et
 
 
@@ -108,7 +107,7 @@ class Farmer(Clarity):
         page_list = []
         while True:
             # since ISE Pagenets the results
-            eps_url = get_eps + f'?size=100&page={page_counter}'
+            eps_url = get_eps + f'?size=10&page={page_counter}'
             req = ise_session.get(eps_url)
             if req.status_code != 200:
                 self.logger.critical(f'ISE: could not reach node at {get_eps}')
@@ -122,15 +121,14 @@ class Farmer(Clarity):
                 # if we have no more then break
                 if '"rel" : "next"' in req.text:
                     page_counter += 1
-                    sleep(.5)
-                else:
+                    # sleep(.5)
+                # else:
                     break
         ise_data = pd.DataFrame(page_list)
 
         return ise_data
 
-
-    def send_data_to_ise(self):
+    def send_data_to_ise(self,test_data=False,**kwargs):
         ise_info = self.config['ISE']
         bulk_create = f'{ise_info["node"]}/ers/config/endpoint/bulk'
         ise_session = Session()
@@ -139,18 +137,19 @@ class Farmer(Clarity):
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
         # pull info from csw and aci and endpoint from ise
-        aci_data = self.pull_aci_data()
-        csw_data = self.pull_csw_data()
-        #ise_data = self.pull_ise_data(ise_session)
+        if not test_data:
+            aci_data = self.pull_aci_data()
+            csw_data = self.pull_csw_data()
+            # combine csw and aci
+            combined_data = self._combine_aci_cws_df(aci_data, csw_data)
+        # ise_data = self.pull_ise_data(ise_session)
 
-        ######### TEST!!!!!!!!!####
-        #from TEST.tempcheck import input_generator
-        #combined_data = input_generator(seed=399)
-        ######### TEST!!!!!!!!!####
+        # Testing only
+        if test_data:
+            from TEST.tempcheck import input_generator
+            combined_data = input_generator(seed=kwargs.get('seed'))
 
         # check to see if data from DC is already in ISE if so remove them for and mark for updating
-        # combine csw and aci
-        combined_data = self._combine_aci_cws_df(aci_data,csw_data)
         # todo: need to make endpoint update flow
         combined_data['datastore_location'] = None
 #        for i in combined_data.index:
@@ -249,35 +248,6 @@ class Farmer(Clarity):
         aci_endpoints.rename(columns={0: 'iface_mac', 1: "ip", 2: "EPG"}, inplace=True)
         return aci_endpoints
 
-
-    @staticmethod
-    def _ise_template_creator(record_data: dict, update_record: str = False):
-        """
-        :type update_record: if this is set to False the template will return without the ID field. if you want to update a field fill this var with the appropriate ID
-        MEANT FOR BULK OPs but can handle singles with bulk election
-        """
-        temp = {
-            "ERSEndPoint": {
-                "name": record_data["hostname"],
-                "mac": record_data['mac'],
-                "staticProfileAssignment": 'false',
-                "staticProfileAssignmentDefined": 'false',
-                "staticGroupAssignment": 'false',
-                "staticGroupAssignmentDefined": 'false',
-                "customAttributes": {
-                    "customAttributes": {
-                        "DataCenter_OS": record_data["os"],
-                        "DataCenter_IP": record_data["ip"],
-                        "DataCenter_Enforcement": "None"  # once we get this attr it will be filled
-                    }
-                }
-            }
-        }
-
-        if update_record:
-            temp['ERSEndPoint']['id'] = update_record
-        return temp
-
     @staticmethod
     def _ise_endpoint_template(root,resources_list,endpoints:pd.DataFrame):
         for i in endpoints.index:
@@ -318,5 +288,5 @@ if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
     coldF.logger.info('Starting ColdFarmer')
     # coldF.pull_csw_data()
-    coldF.send_data_to_ise()
+    coldF.send_data_to_ise(test_data=True,seed=399)
     # coldF.pull_ise_data()
