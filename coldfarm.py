@@ -5,42 +5,18 @@ from time import sleep
 from json import loads, dumps
 from socket import gethostbyaddr
 from requests import Session
-from ColdClarity.utilities import log_collector
-from ColdClarity.ise_control import Clarity
+from ColdClarity.utilities import log_collector, Rutils
 
 
-class Farmer(Clarity):
+class Farmer:
+    UTILS = Rutils()
 
     def __init__(self, config: str = "config.yaml", verify_ssl=False):
-        # super().__init__(config)
         self.logger = log_collector(file_name='wastewater.log', func_name='ColdFarm')
         # move config file to new folder
         config = self.UTILS.create_file_path('configs', config)
         self.config = self.UTILS.get_yaml_config(config, self)
         self.ssl_verify = verify_ssl
-
-    def ise_web_login_action(self):
-        ise_info = self.config['ISE']
-        # ISE username and password
-        if ise_info['authentication']['text_based']['use']:
-            self.login_type = 'text'
-            ise_username = ise_info['authentication']['text_based']['username']
-            ise_password = ise_info['authentication']['text_based']['password']
-            # encode cred str to pass as a post msg to ISE
-            self.user = self.UTILS.encode_data(ise_username, base64=False)
-            self.password = self.UTILS.encode_data(ise_password, base64=False)
-            self.auth_source = ise_info['authentication']['text_based']['auth_source']
-        # cert based
-        elif ise_info['authentication']['cert_based']['use']:
-            self.login_type = 'cert'
-            cert_location = ise_info['authentication']['cert_based']['cert_pfx_location']
-            # move cert to new folder
-            self.cert_location = self.UTILS.create_file_path('certificate_information', cert_location)
-            self.cert_passwd = ise_info['authentication']['cert_based']['cert_password']
-        ise_session = Session()
-        ise_session.verify = self.ssl_verify
-        self.get_session(ise_session)
-        return ise_session
 
     def pull_aci_data(self):
         site_coll = []
@@ -128,6 +104,7 @@ class Farmer(Clarity):
         return ise_data
 
     def send_data_to_ise(self, test_data=False, **kwargs):
+        self.logger.info('Starting CSW/ACI ingestion to ISE')
         ise_info = self.config['ISE']
         bulk_create = f'{ise_info["node"]}/api/v1/endpoint/bulk'
         ise_session = Session()
@@ -144,10 +121,10 @@ class Farmer(Clarity):
 
         # Testing only
         if test_data:
-            from TEST.tempcheck import input_generator
-            combined_data = input_generator(seed=kwargs.get('seed'))
+            from Test.tempcheck import input_generator
+            combined_data = input_generator(seed=kwargs.get('test_seed'))
 
-        # create templates based on new endpoints
+        # create Templates based on new endpoints
         new_endpoints = self._ise_endpoint_template(combined_data)
         self.logger.info(f'ISE: attempting to create {len(new_endpoints)} endpoint in ISE')
 
@@ -231,7 +208,7 @@ class Farmer(Clarity):
 
 if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
-    coldF.logger.info('Starting ColdFarmer')
+
     # coldF.pull_csw_data()
     coldF.send_data_to_ise(test_data=True)
     # coldF.pull_ise_data()
