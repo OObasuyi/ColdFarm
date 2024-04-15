@@ -7,7 +7,6 @@ from socket import gethostbyaddr
 from requests import Session
 from ColdClarity.utilities import log_collector
 from ColdClarity.ise_control import Clarity
-import re
 import xml.etree.ElementTree as et
 
 
@@ -49,7 +48,7 @@ class Farmer(Clarity):
         aci_dfs = []
         apic_info = self.config['APIC']
         pri_list = apic_info['pri_dc']
-        sec_list = apic_info['sec_dc']
+        sec_list = apic_info.get('sec_dc')
 
         # since we have a list of DCs lets spool
         for pl in pri_list:
@@ -59,16 +58,19 @@ class Farmer(Clarity):
                 aci_dfs.append(aci_endpoints)
 
         # if a site was unreachable in the prim list then we need to search the sec list
-        for sl in sec_list:
-            if sl not in site_coll:
-                aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
-                if site_name:
-                    site_coll.append(site_name)
-                    aci_dfs.append(aci_endpoints)
+        if sec_list:
+            for sl in sec_list:
+                if sl not in site_coll:
+                    aci_endpoints, site_name = self._aci_engine(site_data=sl, apic_info=apic_info)
+                    if site_name:
+                        site_coll.append(site_name)
+                        aci_dfs.append(aci_endpoints)
 
         # combine and normalize
         aci_dfs = pd.concat(aci_dfs, axis=0).drop_duplicates(subset=['iface_mac'])
-        aci_dfs['dns_name'] = aci_dfs['iface_mac'].apply(lambda x: self._dns_socket_handle(x))
+        aci_dfs['dns_name'] = aci_dfs['ip'].apply(lambda x: self._dns_socket_handle(x))
+        aci_dfs['iface_mac'] = aci_dfs['iface_mac'].apply(lambda x: x.lower())
+        aci_dfs['dns_name'] = aci_dfs['dns_name'].apply(lambda x: x.lower())
         return aci_dfs
 
     def pull_csw_data(self):
@@ -95,6 +97,7 @@ class Farmer(Clarity):
         csw_endpoints = pd.DataFrame(csw_data["results"])
         csw_endpoints.drop_duplicates(subset='host_name', inplace=True)
         csw_endpoints.dropna(subset='host_name', inplace=True)
+        csw_endpoints['host_name'] = csw_endpoints['host_name'].apply(lambda x: x.lower())
         return csw_endpoints
 
     def pull_ise_data(self,ise_session):
@@ -104,7 +107,7 @@ class Farmer(Clarity):
         page_list = []
         while True:
             # since ISE Pagenets the results
-            eps_url = get_eps + f'?size=100&page={page_counter}'
+            eps_url = get_eps + f'?size=10&page={page_counter}'
             req = ise_session.get(eps_url)
             if req.status_code != 200:
                 self.logger.critical(f'ISE: could not reach node at {get_eps}')
@@ -118,15 +121,14 @@ class Farmer(Clarity):
                 # if we have no more then break
                 if '"rel" : "next"' in req.text:
                     page_counter += 1
-                    sleep(.5)
-                else:
+                    # sleep(.5)
+                # else:
                     break
         ise_data = pd.DataFrame(page_list)
 
         return ise_data
 
-
-    def send_data_to_ise(self):
+    def send_data_to_ise(self,test_data=False,**kwargs):
         ise_info = self.config['ISE']
         bulk_create = f'{ise_info["node"]}/ers/config/endpoint/bulk'
         ise_session = Session()
@@ -135,28 +137,31 @@ class Farmer(Clarity):
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
         # pull info from csw and aci and endpoint from ise
-        # aci_data = self.pull_aci_data()
-        # csw_data = self.pull_csw_data()
-        ise_data = self.pull_ise_data(ise_session)
+        if not test_data:
+            aci_data = self.pull_aci_data()
+            csw_data = self.pull_csw_data()
+            # combine csw and aci
+            combined_data = self._combine_aci_cws_df(aci_data, csw_data)
+        # ise_data = self.pull_ise_data(ise_session)
 
-        ######### TEST!!!!!!!!!####
-        from TEST.tempcheck import input_generator
-        combined_data = input_generator(seed=399)
-        ######### TEST!!!!!!!!!####
+        # Testing only
+        if test_data:
+            from TEST.tempcheck import input_generator
+            combined_data = input_generator(seed=kwargs.get('seed'))
 
         # check to see if data from DC is already in ISE if so remove them for and mark for updating
-        # todo: need to combine csw and aci
         # todo: need to make endpoint update flow
         combined_data['datastore_location'] = None
-        for i in combined_data.index:
-            com_data = combined_data.iloc[i]
-            if com_data['mac'].upper() in ise_data['name'].tolist():
-                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['mac'].upper()].iloc[0]
+#        for i in combined_data.index:
+#            com_data = combined_data.iloc[i]
+#            if com_data['iface_mac'].upper() in ise_data['name'].tolist():
+#                combined_data['datastore_location'].iloc[i] = ise_data['id'][ise_data['name'] == com_data['iface_mac'].upper()].iloc[0]
         combined_new_endpoints = combined_data[combined_data['datastore_location'].isnull()]
 
         # create templates based on new endpoints
         root, resources_list = self.ise_root_template()
         new_endpoints = self._ise_endpoint_template(root, resources_list,combined_new_endpoints)
+        self.logger.info(f'ISE: attempting to create {len(new_endpoints)} endpoint in ISE')
         ret = ise_session.put(bulk_create, data=new_endpoints)
 
         if ret.status_code != 202:
@@ -199,11 +204,16 @@ class Farmer(Clarity):
         for url_data, site_name in site_data.items():
             aci_endpoints = self._aci_spooler(url=url_data, login=apic_info['username'], password=apic_info['password'])
             # if APIC didnt timeout mark it and get the res
-            if aci_endpoints:
+            if isinstance(aci_endpoints,pd.DataFrame):
                 return aci_endpoints, site_name
             else:
                 self.logger.error(f'ACI: could not reach {site_name} @ {url_data}')
                 return None, None
+
+    @staticmethod
+    def _combine_aci_cws_df(aci_df,csw_df):
+        combined_df = aci_dfs = pd.concat([aci_df,csw_df], axis=0).drop_duplicates(subset=['iface_mac']).fillna('none')
+        return combined_df
 
     def _aci_spooler(self, url, login, password):
         session = aci_mod.Session(url=url, uid=login, pwd=password, subscription_enabled=False, verify_ssl=self.ssl_verify)
@@ -238,44 +248,16 @@ class Farmer(Clarity):
         aci_endpoints.rename(columns={0: 'iface_mac', 1: "ip", 2: "EPG"}, inplace=True)
         return aci_endpoints
 
-
-    @staticmethod
-    def _ise_template_creator(record_data: dict, update_record: str = False):
-        """
-        :type update_record: if this is set to False the template will return without the ID field. if you want to update a field fill this var with the appropriate ID
-        MEANT FOR BULK OPs but can handle singles with bulk election
-        """
-        temp = {
-            "ERSEndPoint": {
-                "name": record_data["hostname"],
-                "mac": record_data['mac'],
-                "staticProfileAssignment": 'false',
-                "staticProfileAssignmentDefined": 'false',
-                "staticGroupAssignment": 'false',
-                "staticGroupAssignmentDefined": 'false',
-                "customAttributes": {
-                    "customAttributes": {
-                        "DataCenter_OS": record_data["os"],
-                        "DataCenter_IP": record_data["ip"],
-                        "DataCenter_Enforcement": "None"  # once we get this attr it will be filled
-                    }
-                }
-            }
-        }
-
-        if update_record:
-            temp['ERSEndPoint']['id'] = update_record
-        return temp
-
     @staticmethod
     def _ise_endpoint_template(root,resources_list,endpoints:pd.DataFrame):
         for i in endpoints.index:
             endpoint = endpoints.iloc[i]
-            endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['hostname']})
+            endpoint['host_name'] = endpoint['host_name'] if endpoint['host_name'] != 'none' else endpoint['dns_name']
 
+            endpoint_elm = et.SubElement(resources_list, 'ns4:endpoint', attrib={'description': endpoint['host_name']})
             custom_attributes = et.SubElement(endpoint_elm, 'customAttributes')
             nested_custom_attributes = et.SubElement(custom_attributes, 'customAttributes')
-            for key, value in {'DataCenter_OS': endpoint['os'], 'DataCenter_HostName': endpoint['hostname'], 'DataCenter_IP': endpoint['ip'], 'DataCenter_Enforcement': 'None'}.items():
+            for key, value in {'DataCenter_OS': endpoint['os'], 'DataCenter_HostName': endpoint['host_name'], 'DataCenter_IP': endpoint['ip'], 'DataCenter_Enforcement': 'None','DataCenter_EPG': endpoint['EPG']}.items():
                 entry = et.SubElement(nested_custom_attributes, 'entry')
                 entry_key = et.SubElement(entry, 'key')
                 entry_key.text = key
@@ -283,7 +265,7 @@ class Farmer(Clarity):
                 entry_value.text = value
 
             mac_element = et.SubElement(endpoint_elm, 'mac')
-            mac_element.text = endpoint['mac']
+            mac_element.text = endpoint['iface_mac']
 
             static_group_assignment = et.SubElement(endpoint_elm, 'staticGroupAssignment')
             static_group_assignment.text = 'false'
@@ -296,15 +278,15 @@ class Farmer(Clarity):
 
     def _dns_socket_handle(self, x):
         try:
-            return gethostbyaddr(x)[0].split(".")
+            return gethostbyaddr(x)[0].split(".")[0]
         except Exception as error:
             self.logger.debug(f'DNS issue for {x}: error code: {error}')
-            return None
+            return "none"
 
 
 if __name__ == "__main__":
     coldF = Farmer('config_test.yaml')
     coldF.logger.info('Starting ColdFarmer')
     # coldF.pull_csw_data()
-    coldF.send_data_to_ise()
+    coldF.send_data_to_ise(test_data=True,seed=399)
     # coldF.pull_ise_data()
