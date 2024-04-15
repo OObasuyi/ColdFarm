@@ -5,7 +5,7 @@ from time import sleep
 from json import loads, dumps
 from socket import gethostbyaddr
 from requests import Session
-from ColdClarity.utilities import log_collector, Rutils
+from utils import log_collector, Rutils
 
 
 class Farmer:
