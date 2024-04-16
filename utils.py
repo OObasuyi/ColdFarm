@@ -24,24 +24,28 @@ class Rutils:
     def __init__(self):
         self.cfg = None
 
-    @staticmethod
-    def create_file_path(folder: str, file_name: str,parent_dir=None):
-        parent_dir = path.abspath(path.join(path.dirname(path.abspath(__file__)), pardir))
-        file_path = path.join(parent_dir, folder)
+  @staticmethod
+ def create_file_path(folder: str, file_name: str):
+        TOP_DIR = path.dirname(path.abspath(__file__))
+        allowed_exts = ['csv', 'log', 'yaml','pfx','pem']
 
-        fName = f'{file_path}/{file_name}'
-        if not path.exists(f'{file_path}'):
-            makedirs(f'{file_path}')
+        input_ext = '.'.join(file_name.split(".")[1:])
+        if input_ext.lower() not in allowed_exts:
+            raise ValueError(f'please ensure you using one of the allowed file types you gave {input_ext}')
+
+        fName = f'{TOP_DIR}/{folder}/{file_name}'
+        if not path.exists(f'{TOP_DIR}/{folder}'):
+            makedirs(f'{TOP_DIR}/{folder}')
 
         # move file to correct dir if needed
         if not path.exists(fName):
             try:
-                replace(f'{parent_dir}/{file_name}', fName)
+                replace(f'{TOP_DIR}/{file_name}', fName)
             except:
                 # file has yet to be created or not in top path
                 pass
-
         return fName
+    
 
     @staticmethod
     def encode_data(data, base64=True):
