@@ -126,17 +126,17 @@ class Farmer:
 
         # create Templates based on new endpoints
         new_endpoints = self._ise_endpoint_template(combined_data)
-        self.logger.info(f'ISE: attempting to create {len(new_endpoints)} endpoint in ISE')
+        self.logger.info(f'ISE: attempting to create {len(combined_data)} endpoint in ISE')
 
         # this is gonna be two operations since its the most effienct way to make sure the endpoints are in with the v1 API and I cant get status updates on calls??
         create_meth = ise_session.post(bulk_create, data=new_endpoints)
-        self.logger.info(f'ISE: received status code {create_meth.status_code} for trying to create {len(new_endpoints)} endpoints in ISE')
+        self.logger.info(f'ISE: received status code {create_meth.status_code} for trying to create {len(combined_data)} endpoints in ISE')
         if create_meth.status_code == 200:
             self.logger.debug(f'ISE: received back ID: {loads(create_meth.content)["id"]} from ISE')
         sleep(5)
 
         update_meth = ise_session.put(bulk_create, data=new_endpoints)
-        self.logger.info(f'ISE: received status code {update_meth.status_code} for trying to update {len(new_endpoints)} endpoints in ISE')
+        self.logger.info(f'ISE: received status code {update_meth.status_code} for trying to update {len(combined_data)} endpoints in ISE')
         if update_meth.status_code == 200:
             self.logger.debug(f'ISE: received back ID: {loads(update_meth.content)["id"]} from ISE')
         pass
