@@ -108,7 +108,7 @@ class Farmer:
         ise_info = self.config['ISE']
         bulk_create = f'{ise_info["node"]}/api/v1/endpoint/bulk'
         ise_session = Session()
-        ise_session.verify = False
+        ise_session.verify = self.ssl_verify
         ise_session.headers = {"Accept": "application/json", "Content-Type": "application/json"}
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
