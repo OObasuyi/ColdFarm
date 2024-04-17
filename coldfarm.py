@@ -192,7 +192,7 @@ class Farmer:
     @staticmethod
     def _ise_endpoint_template(endpoints_dat: pd.DataFrame):
         endpoints_dat.rename(columns={'iface_mac': 'mac', "os": "assetDeviceType", "ip": "ipAddress"}, inplace=True)
-        endpoints_dat['customAttributes'] = endpoints_dat.apply(lambda row: {'DataCenter Enforcement': "None", 'DataCenter HostName': row['host_name'], 'DataCenter EPG': row['EPG']}, axis=1)
+        endpoints_dat['customAttributes'] = endpoints_dat.apply(lambda row: {'DataCenter Enforcement': "None", 'DataCenter HostName': row['host_name'] if row['host_name'] != 'none' else row['dns_name'] , 'DataCenter EPG': row['EPG']}, axis=1)
         endpoints_dat['name'] = endpoints_dat['host_name'].str.lower()
         endpoints_dat.drop(['host_name', 'EPG'], axis=1, inplace=True)
         endpoints_dat_json = endpoints_dat.to_json(orient='records', force_ascii=False)
