@@ -5,7 +5,7 @@ from time import sleep
 from json import loads, dumps
 from socket import gethostbyaddr
 from requests import Session
-from ColdClarity.utilities import log_collector, Rutils
+from utils import log_collector, Rutils
 
 
 class Farmer:
@@ -108,7 +108,7 @@ class Farmer:
         ise_info = self.config['ISE']
         bulk_create = f'{ise_info["node"]}/api/v1/endpoint/bulk'
         ise_session = Session()
-        ise_session.verify = False
+        ise_session.verify = self.ssl_verify
         ise_session.headers = {"Accept": "application/json", "Content-Type": "application/json"}
         ise_session.auth = (ise_info['username'], ise_info['password'])
 
@@ -126,17 +126,17 @@ class Farmer:
 
         # create Templates based on new endpoints
         new_endpoints = self._ise_endpoint_template(combined_data)
-        self.logger.info(f'ISE: attempting to create {len(new_endpoints)} endpoint in ISE')
+        self.logger.info(f'ISE: attempting to create {len(combined_data)} endpoint in ISE')
 
         # this is gonna be two operations since its the most effienct way to make sure the endpoints are in with the v1 API and I cant get status updates on calls??
         create_meth = ise_session.post(bulk_create, data=new_endpoints)
-        self.logger.info(f'ISE: received status code {create_meth.status_code} for trying to create {len(new_endpoints)} endpoints in ISE')
+        self.logger.info(f'ISE: received status code {create_meth.status_code} for trying to create {len(combined_data)} endpoints in ISE')
         if create_meth.status_code == 200:
             self.logger.debug(f'ISE: received back ID: {loads(create_meth.content)["id"]} from ISE')
         sleep(5)
 
         update_meth = ise_session.put(bulk_create, data=new_endpoints)
-        self.logger.info(f'ISE: received status code {update_meth.status_code} for trying to update {len(new_endpoints)} endpoints in ISE')
+        self.logger.info(f'ISE: received status code {update_meth.status_code} for trying to update {len(combined_data)} endpoints in ISE')
         if update_meth.status_code == 200:
             self.logger.debug(f'ISE: received back ID: {loads(update_meth.content)["id"]} from ISE')
         pass
@@ -192,7 +192,11 @@ class Farmer:
     @staticmethod
     def _ise_endpoint_template(endpoints_dat: pd.DataFrame):
         endpoints_dat.rename(columns={'iface_mac': 'mac', "os": "assetDeviceType", "ip": "ipAddress"}, inplace=True)
-        endpoints_dat['customAttributes'] = endpoints_dat.apply(lambda row: {'DataCenter Enforcement': "None", 'DataCenter HostName': row['host_name'], 'DataCenter EPG': row['EPG']}, axis=1)
+        endpoints_dat['customAttributes'] = endpoints_dat.apply(lambda row: {
+                                                                                'DataCenter HostName': row['host_name'] if row['host_name'] != 'none' else row['dns_name'],
+                                                                                'DataCenter EPG': row['EPG'],
+                                                                            }
+                                                                , axis=1)
         endpoints_dat['name'] = endpoints_dat['host_name'].str.lower()
         endpoints_dat.drop(['host_name', 'EPG'], axis=1, inplace=True)
         endpoints_dat_json = endpoints_dat.to_json(orient='records', force_ascii=False)

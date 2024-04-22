@@ -1,9 +1,9 @@
 from base64 import b64encode
 from gzip import open as gzopen
 from logging.handlers import TimedRotatingFileHandler
-from os import path, makedirs, rename, remove, replace
+from os import path, makedirs, rename, remove, replace, walk
 from urllib.parse import quote as url_quote
-
+from io import StringIO
 import yaml
 
 import logging
@@ -27,7 +27,7 @@ class Rutils:
     @staticmethod
     def create_file_path(folder: str, file_name: str):
         TOP_DIR = path.dirname(path.abspath(__file__))
-        allowed_exts = ['csv', 'log', 'yaml','pfx','pem']
+        allowed_exts = ['csv', 'log', 'yaml', 'pfx', 'pem']
 
         input_ext = '.'.join(file_name.split(".")[1:])
         if input_ext.lower() not in allowed_exts:
@@ -62,12 +62,24 @@ class Rutils:
                 except yaml.YAMLError as exc:
                     self_instance.logger.info(f'Error processing config file. Error recevied {exc}')
 
+    @staticmethod
+    def get_files_from_loc(fold_loc: str, files_to_look_for: list):
+        _, _, filenames = next(walk(fold_loc))
+        fnames = [names for names in filenames for filames in files_to_look_for if filames in names]
+        return fnames
 
-def log_collector(log_all=False):
-    fName = Rutils().create_file_path('Logging', 'wastewater.log')
+    @staticmethod
+    def df_to_string_buffer(df):
+        with StringIO() as buffer:
+            df.to_csv(buffer, index=False)
+            return buffer.getvalue()
+
+
+def log_collector(log_all=False, file_name='log.txt', func_name='func_name'):
+    fName = Rutils().create_file_path('Logging', file_name)
 
     if not log_all:
-        logger = logging.getLogger('ColdClarity')
+        logger = logging.getLogger(func_name)
     else:
         logger = logging.getLogger()
         import http.client as http_client
