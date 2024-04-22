@@ -122,7 +122,7 @@ class Farm:
         # Testing only
         if test_data:
             from Test.tempcheck import input_generator
-            combined_data = input_generator(seed=kwargs.get('test_seed'))
+            combined_data = input_generator(amount=test_data,seed=kwargs.get('test_seed'))
 
         # create Templates based on new endpoints
         new_endpoints = self._ise_endpoint_template(combined_data)

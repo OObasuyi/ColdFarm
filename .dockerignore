@@ -1,9 +1,4 @@
-/Dockerfile
-/venv
-/configs/
-/logging/
-/.gitignore
-.yaml
+
 
 ### VirtualEnv template
 # Virtualenv
@@ -184,3 +179,11 @@ cython_debug/
 
 
 
+/Logging/
+/Dockerfile
+/venv
+/configs/
+/.gitignore
+.yaml
+.dockerignore
+*.tar

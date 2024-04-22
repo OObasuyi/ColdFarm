@@ -38,8 +38,8 @@ Before running the program, ensure that you have properly configured the followi
 3. 🚪 Necessary permissions to access endpoint data from Cisco Workload and ACI.
 4. 🌐 Proper network connectivity between the ColdFarm and Data Systems.
 
-## Usage WIP
-
+## Usage (WIP)
+### Source Code
 1. Navigate to the ColdFarm directory:
 
     ```bash
@@ -47,14 +47,26 @@ Before running the program, ensure that you have properly configured the followi
     ```
 
 2. Run the ColdFarm program:
-
+   
     ```bash
     python term_access.py --config_file config.yaml
     ```
+   **FOR TESTING**
+    ```bash
+    python term_access.py --config_file config.yaml --test_count 500 --test_seed 340 # seed for non random macs useful for testing updates
+    ```
 
 3. 🪄 Magic
+### Containers
 
-## Contributing
+1. install the container tar from the [releases](https://github.com/OObasuyi/ColdFarm/releases) 
+   ```bash
+   podman load -i coldfarm.tar 
+   ```
 
-Contributions are welcome! If you have any suggestions, feature requests, or bug reports, please [open an issue](https://github.com/OObasuyi/ColdFarm/issues) or [submit a pull request](https://github.com/OObasuyi/ColdFarm/pulls).
+2. run the container 
+   ```bash
+   podman run -it -v /PATH/TO/<CONFIG_NAME>.yaml:/ColdFarm/configs/config.yaml:Z coldfarm
+   ```
 
+3. 🪄 Magic AGAIN
