@@ -8,7 +8,7 @@ from requests import Session
 from utils import log_collector, Rutils
 
 
-class Farmer:
+class Farm:
     UTILS = Rutils()
 
     def __init__(self, config: str = "config.yaml", verify_ssl=False):
@@ -211,7 +211,7 @@ class Farmer:
 
 
 if __name__ == "__main__":
-    coldF = Farmer('config_test.yaml')
+    coldF = Farm('config_test.yaml')
 
     # coldF.pull_csw_data()
     coldF.send_data_to_ise(test_data=True)

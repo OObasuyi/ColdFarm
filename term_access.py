@@ -1,5 +1,5 @@
 from argparse import ArgumentParser
-from coldfarm import Farmer
+from coldfarm import Farm
 
 
 def term_access():
@@ -10,7 +10,7 @@ def term_access():
     cold_args.add_argument('--test_seed', help='FOR TESTING ONLY. if want test endpoints to be random pick a number', default=None, type=int)
     args = parser.parse_args()
 
-    agg_data_to_ise = Farmer(config=args.config_file)
+    agg_data_to_ise = Farm(config=args.config_file)
     agg_data_to_ise.send_data_to_ise(test_data=args.test_count, test_seed=args.test_seed)
 
 
