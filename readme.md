@@ -58,15 +58,3 @@ Before running the program, ensure that you have properly configured the followi
 
 3. 🪄 Magic
 ### Containers
-
-1. install the container tar from the [releases](https://github.com/OObasuyi/ColdFarm/releases) 
-   ```bash
-   podman load -i coldfarm.tar 
-   ```
-
-2. run the container 
-   ```bash
-   podman run -it -v /PATH/TO/<CONFIG_NAME>.yaml:/ColdFarm/configs/config.yaml:Z coldfarm
-   ```
-
-3. 🪄 Magic AGAIN
