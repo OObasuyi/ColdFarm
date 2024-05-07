@@ -65,7 +65,7 @@ class Farm:
             csw_data = loads(raw_csw.content)
         else:
             self.logger.critical("YAY A NEW ERROR TO FIX")
-            # TODO: more testing needed
+            self.logger.critical(f'CSW: we received error {raw_csw.status_code}')
             quit()
 
         # transform and normalize
