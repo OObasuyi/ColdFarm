@@ -208,11 +208,3 @@ class Farm:
         except Exception as error:
             self.logger.debug(f'DNS issue for {x}: error code: {error}')
             return "none"
-
-
-if __name__ == "__main__":
-    coldF = Farm('config_test.yaml')
-
-    # coldF.pull_csw_data()
-    coldF.send_data_to_ise(test_data=True)
-    # coldF.pull_ise_data()
